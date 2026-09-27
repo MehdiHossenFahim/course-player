@@ -1,43 +1,60 @@
-# Course Player
+# 🎬 Course Player
 
-A polished, browser-based learning interface for locally stored video courses. It turns a folder of lessons into a focused course experience with private progress tracking, playback resume, accessible captions, and zero video uploads.
+**Stop juggling file explorer, VLC, and your code editor just to watch a lesson.**
+
+Course Player turns any folder of local video lessons into a real learning dashboard — right in your browser. Pick a folder once, and it remembers your progress, resumes exactly where you left off, and shows you how much of the course you've actually finished (spoiler: probably less than you think).
+
+No uploads. No accounts. No servers. Your files never leave your machine — ever.
+
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Try%20it%20now-2ea44f?style=for-the-badge)](https://course-player-omega.vercel.app/)
+[![View Code](https://img.shields.io/badge/Code-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/MehdiHossenFahim/course-player)
+
+---
+
+## Why this exists
+
+If you learn to code from downloaded video lessons, you know the drill:
+
+- 📁 Dig through folders to find "which video was I on again"
+- 🎬 Open it in a random media player
+- 💻 Alt-tab to your code editor
+- 🔁 Forget your progress the second you close your laptop
+
+Course Player fixes that. One folder in, one clean learning interface out.
 
 ## Features
 
-- Plays course videos directly in the browser
-- Builds the course outline automatically from the selected folder structure
-- Groups lessons into sections and orders numbered files naturally
-- Automatically marks a lesson complete when its video finishes
-- Resumes each video from its last saved position, including after the browser is closed
-- Supports multiple course folders in one browser session
-- Displays overall completion, total course time, and remaining learning time
-- Offers a per-course reset control for progress and saved playback positions
-- Includes a saved dark-mode preference
-- Supports matching English `.vtt` subtitle files and embedded subtitle/caption tracks through a CC on/off control
-- Includes previous and next lesson navigation
-- Stores preferences, progress, positions, and calculated durations in local browser storage
-- Works without uploading or copying course videos
-- Uses a locally compiled Tailwind CSS build, ready for static hosting
-- Responsive layout for desktop and smaller screens
+- Plays your local course videos directly in the browser — nothing leaves your device
+- Automatically builds a course outline from your folder structure
+- Groups lessons into sections and sorts numbered files in natural order
+- Marks a lesson complete automatically when the video finishes
+- Resumes every video from its last saved position — even after closing the browser
+- Supports multiple course folders in one session, switch between them anytime
+- Shows overall completion %, total course time, and time remaining
+- Per-course reset for progress and saved positions
+- Dark mode that actually remembers you chose it
+- Subtitle support: matching `.vtt` files and embedded caption tracks, toggle with one click
+- Previous/next lesson navigation
+- Fully responsive — desktop or laptop, doesn't matter
 
-## Run locally
+## Run it locally
 
 1. Download or clone this repository.
 2. Open `index.html` in a current version of **Google Chrome** or **Microsoft Edge**.
-3. Select **Choose course folder**.
-4. Choose the top-level folder that contains your course sections and MP4 files.
+3. Click **Choose course folder**.
+4. Select the top-level folder containing your course sections and video files.
 
-The player reads that folder only in your browser session. Your videos remain on your computer. You can use **Add course** to load another folder and switch between loaded courses from the course selector in the header.
+The player reads that folder only for your current browser session. Nothing is copied, uploaded, or sent anywhere. Use **Add course** to load another folder and switch between them from the course selector in the header.
 
-### Privacy and saved data
+### Privacy, for real
 
-No course videos, captions, progress, or playback positions are uploaded. The app stores its learner data in your browser's `localStorage` under a private Course Player key.
+No videos, captions, progress, or playback positions are ever uploaded. Everything lives in your browser's `localStorage`, under a private Course Player key, on your device, full stop.
 
-For browser-security reasons, a page cannot reopen a local folder automatically after a full browser restart. Choose the same folder again and the player will match it to its saved local progress and resume position.
+Because of browser security rules, a page can't automatically reopen a local folder after a full browser restart — that's a browser limitation, not a bug. Just pick the same folder again and the player will match it right back to your saved progress.
 
 ## Course folder structure
 
-The player uses subfolders as course sections. Numbered folder and video names are sorted in their natural order.
+Course Player treats subfolders as sections and sorts numbered names naturally:
 
 ```text
 My Course/
@@ -50,19 +67,28 @@ My Course/
     └── 001 Build the project.mp4
 ```
 
-For sidecar subtitles, place the WebVTT file beside the video and use the same name followed by `_en.vtt`. The CC button also detects and controls caption tracks embedded inside compatible MP4 files.
+For subtitles, place a `.vtt` file next to its video with the same name plus `_en.vtt`. The CC button also auto-detects caption tracks embedded in compatible MP4 files.
 
-## Publishing on GitHub Pages
+## Deploying
 
-The committed `styles.css` is already the production-ready Tailwind output. To change the Tailwind source later, run `npm install` once, then run:
+### Vercel (recommended)
+
+1. Push this repo to GitHub (already done ✅).
+2. Import the repo on [vercel.com](https://vercel.com) — it's a static site, so zero config needed.
+3. Deploy. Grab your live URL and drop it into the badge at the top of this README.
+
+### GitHub Pages
+
+The committed `styles.css` is already production-ready Tailwind output. If you change `tailwind.css`, rebuild with:
 
 ```bash
+npm install
 npm run build:css
 ```
 
-Push the project files to a GitHub repository, then enable **Settings → Pages** and publish from your chosen branch. The interface will be live as a static site.
+Then push and enable **Settings → Pages** on your chosen branch.
 
-For privacy and browser security, a published site cannot automatically read a visitor’s computer. Each visitor chooses their own course folder after opening the site; no course files are sent to GitHub Pages or this project.
+Either way: a published site never reads a visitor's computer automatically. Each visitor picks their own folder locally — no course files ever touch the server, GitHub, or Vercel.
 
 ## Project structure
 
@@ -78,8 +104,12 @@ For privacy and browser security, a published site cannot automatically read a v
 
 ## Browser support
 
-Chrome and Edge provide the best experience because they support the folder picker used by the app. Other browsers can use the built-in folder-selection fallback where supported.
+Chrome and Edge give the full experience since they support the folder picker this app relies on. Other browsers can use the built-in folder-selection fallback where available.
+
+## Contributing
+
+Found a bug, or have an idea that would make this better? Issues and pull requests are welcome — this is very much a living project.
 
 ## License
 
-Use, adapt, and personalize this project for your own course library.
+MIT — use it, fork it, adapt it for your own course library. See [LICENSE](LICENSE) for details.
