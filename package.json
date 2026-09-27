@@ -1,0 +1,13 @@
+{
+  "name": "local-course-player",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./tailwind.css -o ./styles.css --minify",
+    "watch:css": "npx @tailwindcss/cli -i ./tailwind.css -o ./styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}
