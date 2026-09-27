@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0056d2">
+  <title>Course Player</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Course Player home"><span class="brand-mark">C</span> Course Player</a>
+    <div class="course-name" id="courseName">Build a Backend REST API with Python &amp; Django</div>
+    <button class="folder-button" id="openFolderBtn" type="button">Open course folder</button>
+    <input class="sr-only" id="folderInput" type="file" webkitdirectory multiple accept="video/mp4,.vtt">
+  </header>
+
+  <main id="top">
+    <section class="welcome" id="welcomePanel">
+      <p class="eyebrow">YOUR PERSONAL LEARNING SPACE</p>
+      <h1>Learn at your own pace.</h1>
+      <p>Choose the folder containing your course videos. The player will organize every MP4 into sections, play it directly in this browser, and remember your progress on this device.</p>
+      <button class="primary-button" id="welcomeOpenBtn" type="button">Choose course folder <span aria-hidden="true">→</span></button>
+      <p class="path-hint">Course folder: <code>F:\Udemy Courses\Udemy - Build a Backend REST API with Python &amp; Django - Advanced</code></p>
+    </section>
+
+    <section class="player-layout" id="playerLayout" hidden>
+      <div class="learning-area">
+        <div class="breadcrumb" id="breadcrumb">Course / Section</div>
+        <div class="video-shell">
+          <video id="videoPlayer" controls preload="metadata" playsinline></video>
+          <div class="empty-player" id="emptyPlayer">Select a lesson to begin</div>
+          <button class="cc-button" id="captionBtn" type="button" disabled aria-pressed="false" title="Toggle English captions">CC</button>
+        </div>
+        <div class="lesson-header">
+          <div>
+            <p class="lesson-label" id="lessonNumber">LESSON</p>
+            <h1 id="lessonTitle">Choose a lesson</h1>
+          </div>
+          <button class="complete-button" id="completeBtn" type="button" disabled>Mark as complete</button>
+        </div>
+        <div class="lesson-controls">
+          <button class="text-button" id="previousBtn" type="button" disabled>← Previous</button>
+          <button class="text-button next" id="nextBtn" type="button" disabled>Next lesson →</button>
+        </div>
+      </div>
+
+      <aside class="course-sidebar" aria-label="Course content">
+        <div class="sidebar-heading">
+          <div>
+            <p class="eyebrow">COURSE CONTENT</p>
+            <strong id="progressLabel">0 of 0 completed</strong>
+          </div>
+          <span id="progressPercent">0%</span>
+        </div>
+        <div class="progress-track" aria-label="Course progress"><div id="progressBar"></div></div>
+        <label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search lessons"></label>
+        <div class="section-list" id="sectionList"></div>
+      </aside>
+    </section>
+  </main>
+
+  <template id="sectionTemplate">
+    <details class="course-section" open>
+      <summary><span class="section-title"></span><span class="section-count"></span></summary>
+      <div class="lesson-list"></div>
+    </details>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>
