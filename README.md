@@ -69,27 +69,6 @@ My Course/
 
 For subtitles, place a `.vtt` file next to its video with the same name plus `_en.vtt`. The CC button also auto-detects caption tracks embedded in compatible MP4 files.
 
-## Deploying
-
-### Vercel (recommended)
-
-1. Push this repo to GitHub (already done ✅).
-2. Import the repo on [vercel.com](https://vercel.com) — it's a static site, so zero config needed.
-3. Deploy. Grab your live URL and drop it into the badge at the top of this README.
-
-### GitHub Pages
-
-The committed `styles.css` is already production-ready Tailwind output. If you change `tailwind.css`, rebuild with:
-
-```bash
-npm install
-npm run build:css
-```
-
-Then push and enable **Settings → Pages** on your chosen branch.
-
-Either way: a published site never reads a visitor's computer automatically. Each visitor picks their own folder locally — no course files ever touch the server, GitHub, or Vercel.
-
 ## Project structure
 
 ```text
