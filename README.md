@@ -2,7 +2,9 @@
 
 A sleek, purely local, browser-based minimalist course player built with **React**, **Vite**, and **Tailwind CSS v4**.
 
-![Local Course Player Demo](public/demo.jpg) *(Replace with actual screenshot if available)*
+[![Live on Vercel](https://img.shields.io/badge/Live_on_Vercel-black?style=for-the-badge&logo=vercel)](https://course-player-omega.vercel.app/)
+
+![Local Course Player Demo](public/image.png)
 
 ## Features
 

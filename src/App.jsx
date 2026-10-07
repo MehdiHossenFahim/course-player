@@ -4,10 +4,20 @@ const STORAGE_KEY = 'course-player-data-v4';
 
 const natural = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const isVideo = name => /\.(mp4|mkv|webm)$/i.test(name);
-const isCaption = name => /_en\.(vtt|srt)$/i.test(name);
-const normalizePath = path => path.replace(/\\/g, '/').toLowerCase().replace(/_en\.(vtt|srt)$|\.(mp4|mkv|webm)$/, '');
-const cleanTitle = name => name.replace(/^\d+\s+/, '').replace(/\.(mp4|mkv|webm)$/i, '');
+const isCaption = name => /\.(vtt|srt)$/i.test(name);
+const isResource = name => /\.(pdf|html|htm)$/i.test(name);
+const isCourseFile = name => isVideo(name) || isCaption(name) || isResource(name);
+const normalizePath = path => path.replace(/\\/g, '/').toLowerCase();
+const cleanTitle = name => name.replace(/^\d+\s+/, '').replace(/\.(mp4|mkv|webm|pdf|html|htm)$/i, '');
 const displaySection = folder => folder.replace(/^\d+\s*-\s*/, '');
+
+const sectionColors = [
+  'text-terracotta dark:text-terracotta',
+  'text-sage dark:text-sage',
+  'text-navy dark:text-white',
+  'text-[#d97757] dark:text-[#e89b82]', // lighter terracotta
+  'text-[#688273] dark:text-[#9bb2a5]', // lighter sage
+];
 
 function hash(value) {
   let result = 5381;
@@ -90,6 +100,25 @@ export default function App() {
   const [currentTrackUrl, setCurrentTrackUrl] = useState(null);
   const [captionsAvailable, setCaptionsAvailable] = useState(false);
   const [pendingResume, setPendingResume] = useState(0);
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+
+  const toggleSection = (sectionName) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionName)) next.delete(sectionName);
+      else next.add(sectionName);
+      return next;
+    });
+  };
+
+  const toggleAllSections = () => {
+    const allSections = new Set(activeCourseData?.lessons.map(l => l.section) || []);
+    if (collapsedSections.size === allSections.size && allSections.size > 0) {
+      setCollapsedSections(new Set());
+    } else {
+      setCollapsedSections(allSections);
+    }
+  };
 
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -176,7 +205,7 @@ export default function App() {
   async function readDirectory(handle, prefix = '') {
     const files = [];
     for await (const [name, entry] of handle.entries()) {
-      if (entry.kind === 'file' && (isVideo(name) || isCaption(name))) files.push({ file: await entry.getFile(), path: `${prefix}${name}` });
+      if (entry.kind === 'file' && isCourseFile(name)) files.push({ file: await entry.getFile(), path: `${prefix}${name}` });
       if (entry.kind === 'directory') files.push(...await readDirectory(entry, `${prefix}${name}/`));
     }
     return files;
@@ -185,7 +214,7 @@ export default function App() {
   function handleFileInput(e) {
     if (e.target.files.length) {
       const fileList = [...e.target.files];
-      const entries = fileList.filter(file => isVideo(file.name) || isCaption(file.name)).map(file => ({ file, path: file.webkitRelativePath || file.name }));
+      const entries = fileList.filter(file => isCourseFile(file.name)).map(file => ({ file, path: file.webkitRelativePath || file.name }));
       const firstPath = entries[0]?.path || '';
       const courseName = firstPath.includes('/') ? firstPath.split('/')[0] : 'Selected course';
       addCourse(entries, courseName);
@@ -194,10 +223,23 @@ export default function App() {
   }
 
   function addCourse(entries, courseName) {
-    const captions = new Map(entries.filter(entry => isCaption(entry.file.name)).map(entry => [normalizePath(entry.path), entry.file]));
-    const lessons = entries.filter(entry => isVideo(entry.file.name)).map(entry => {
+    const captionEntries = entries.filter(entry => isCaption(entry.file.name));
+    const lessons = entries.filter(entry => isVideo(entry.file.name) || isResource(entry.file.name)).map(entry => {
       const parts = entry.path.split('/');
-      const folder = parts.length > 1 ? parts.at(-2) : 'Course videos';
+      const folder = parts.length > 1 ? parts.at(-2) : 'Course contents';
+      
+      let caption = undefined;
+      if (isVideo(entry.file.name)) {
+        const baseName = entry.file.name.replace(/\.(mp4|mkv|webm)$/i, '').toLowerCase();
+        const videoFolder = entry.path.substring(0, entry.path.lastIndexOf('/'));
+        caption = captionEntries.find(c => {
+          const cFolder = c.path.substring(0, c.path.lastIndexOf('/'));
+          if (cFolder !== videoFolder) return false;
+          const cName = c.file.name.toLowerCase();
+          return cName.startsWith(baseName) || baseName.startsWith(cName.replace(/\.(vtt|srt)$/i, ''));
+        })?.file;
+      }
+
       return { 
         id: `${entry.path}:${entry.file.size}:${entry.file.lastModified}`, 
         file: entry.file, 
@@ -205,11 +247,12 @@ export default function App() {
         title: cleanTitle(entry.file.name), 
         section: displaySection(folder), 
         sectionOrder: folder, 
-        caption: captions.get(normalizePath(entry.path)) 
+        isResource: isResource(entry.file.name),
+        caption: caption
       };
     }).sort((a, b) => natural.compare(a.sectionOrder, b.sectionOrder) || natural.compare(a.path, b.path));
 
-    if (!lessons.length) { alert('No supported videos were found in that folder.'); return null; }
+    if (!lessons.length) { alert('No supported files were found in that folder.'); return null; }
     
     const id = hash(`${courseName}|${lessons.map(l => l.id).join('|')}`);
     const newCourse = { id, name: courseName, lessons };
@@ -524,23 +567,23 @@ export default function App() {
   const isDark = store.preferences.theme === 'dark';
 
   return (
-    <div className="min-h-screen selection:bg-zinc-200 dark:selection:bg-zinc-800">
-      <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-zinc-200/50 bg-white/70 px-4 backdrop-blur-xl sm:px-6 lg:px-8 dark:border-zinc-800/50 dark:bg-[#09090b]/70">
+    <div className="min-h-screen selection:bg-terracotta/30 dark:selection:bg-terracotta/40">
+      <header className="sticky top-0 z-50 flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8 glass-panel border-x-0 border-t-0 rounded-none">
         <div className="flex items-center gap-6">
           <div onClick={() => setActiveCourseId(null)} className="flex items-center gap-3 cursor-pointer group">
-            <div className="flex size-8 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-bold text-white transition group-hover:scale-105 dark:bg-white dark:text-zinc-900">
-              <svg width="12" height="12" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M21.5 15.134C22.1667 15.5189 22.1667 16.4811 21.5 16.866L13.25 21.6292C12.5833 22.0141 11.75 21.5329 11.75 20.7631L11.75 11.2369C11.75 10.4671 12.5833 9.9859 13.25 10.3708L21.5 15.134Z" fill="currentColor"/>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-navy to-navy/80 text-white transition-all duration-300 group-hover:scale-105 group-hover:from-terracotta group-hover:to-terracotta/80 dark:from-white dark:to-white/90 dark:text-navy dark:group-hover:from-terracotta dark:group-hover:to-terracotta/90 dark:group-hover:text-white shadow-md">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
               </svg>
             </div>
-            <span className="text-sm font-semibold tracking-tight group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">Course Player</span>
+            <span className="text-base font-bold tracking-tight text-navy dark:text-white group-hover:text-terracotta dark:group-hover:text-terracotta transition-colors">Course Player</span>
           </div>
-          <div className="hidden h-5 w-px bg-zinc-200 sm:block dark:bg-zinc-800"></div>
+          <div className="hidden h-6 w-px bg-black/10 sm:block dark:bg-white/10"></div>
           <select 
             value={activeCourseId || ''} 
             onChange={e => { setActiveCourseId(e.target.value); activateLesson(e.target.value, loadedCourses.get(e.target.value), store.courses[e.target.value]?.lastIndex || 0); }}
             disabled={loadedCourses.size === 0}
-            className="hidden w-64 truncate rounded-md border-0 bg-transparent py-1.5 pl-0 pr-8 text-sm text-zinc-600 focus:ring-0 sm:block dark:text-zinc-400"
+            className="hidden w-64 truncate rounded-md border-0 bg-transparent py-1.5 pl-0 pr-8 text-sm text-ink-light focus:ring-0 sm:block dark:text-ink-dark opacity-80"
           >
             <option value="" disabled>Select a loaded course...</option>
             {Array.from(loadedCourses.values()).map(c => (
@@ -549,17 +592,17 @@ export default function App() {
           </select>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={toggleTheme} className="grid size-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition-colors" title="Toggle theme">
+          <button onClick={toggleTheme} className="grid size-9 place-items-center rounded-full text-ink-light/60 hover:bg-black/5 hover:text-ink-light dark:text-ink-dark/60 dark:hover:bg-white/10 dark:hover:text-ink-dark transition-colors" title="Toggle theme">
             {isDark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             )}
           </button>
-          <button onClick={selectFolder} className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 shadow-sm">
+          <button onClick={selectFolder} className="rounded-full bg-terracotta px-6 py-2.5 text-sm font-bold tracking-wide text-white transition-all duration-300 hover:bg-terracotta-hover shadow-[0_4px_12px_rgba(211,107,70,0.3)] hover:scale-105 active:scale-95 dark:shadow-[0_4px_12px_rgba(211,107,70,0.15)]">
             Open Folder
           </button>
-          <input ref={fileInputRef} onChange={handleFileInput} className="hidden" type="file" webkitdirectory="" directory="" multiple accept="video/mp4,video/x-matroska,video/webm,.mkv,.vtt,.srt" />
+          <input ref={fileInputRef} onChange={handleFileInput} className="hidden" type="file" webkitdirectory="" directory="" multiple accept="video/mp4,video/x-matroska,video/webm,.mkv,.vtt,.srt,.pdf,.html,.htm" />
         </div>
       </header>
 
@@ -571,8 +614,8 @@ export default function App() {
             <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
               <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-white">Recent Courses</h1>
-                  <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Pick up right where you left off.</p>
+                  <h1 className="text-3xl font-bold tracking-tight text-navy dark:text-white">Recent Courses</h1>
+                  <p className="mt-2 text-sm text-ink-light/60 dark:text-ink-dark/60 font-medium">Pick up right where you left off.</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -581,7 +624,7 @@ export default function App() {
                   return (
                     <div 
                       key={id} 
-                      className="group relative text-left flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-zinc-200/50 shadow-sm transition hover:shadow-md hover:ring-zinc-300 dark:bg-[#09090b] dark:ring-zinc-800/50 dark:hover:ring-zinc-700"
+                      className="group relative text-left flex flex-col overflow-hidden rounded-2xl glass-card"
                     >
                       <button
                         onClick={() => openRecentCourse(id)}
@@ -595,28 +638,28 @@ export default function App() {
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                       </button>
-                      <div className="relative aspect-video w-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden border-b border-zinc-100 dark:border-zinc-800/50">
+                      <div className="relative aspect-video w-full bg-black/5 dark:bg-white/5 overflow-hidden border-b border-black/5 dark:border-white/5">
                         {data.thumbnail ? (
                           <img src={data.thumbnail} alt="" className="size-full object-cover transition duration-500 group-hover:scale-105" />
                         ) : (
-                          <div className="grid size-full place-items-center text-zinc-300 dark:text-zinc-800">
+                          <div className="grid size-full place-items-center text-ink-light/20 dark:text-ink-dark/20">
                             <svg className="size-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z" /></svg>
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-black/20 opacity-0 transition-opacity group-hover:opacity-100 grid place-items-center pointer-events-none">
-                          <div className="rounded-full bg-white/90 p-3 text-zinc-900 shadow-sm backdrop-blur-md transition-transform group-hover:scale-110">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+                        <div className="absolute inset-0 bg-navy/20 opacity-0 transition-opacity group-hover:opacity-100 grid place-items-center pointer-events-none">
+                          <div className="rounded-full bg-white/90 p-4 text-navy shadow-xl backdrop-blur-md transition-transform group-hover:scale-110">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8V4z"/></svg>
                           </div>
                         </div>
                         {!isLoaded && (
-                          <div className="absolute top-3 left-3 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-md pointer-events-none">
+                          <div className="absolute top-3 left-3 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold tracking-wide text-white backdrop-blur-md pointer-events-none">
                             Requires Permission
                           </div>
                         )}
                       </div>
                       <div className="p-4 flex-1 flex flex-col justify-between pointer-events-none">
-                        <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-2">{data.name}</h3>
-                        <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                        <h3 className="font-bold text-navy dark:text-white line-clamp-2">{data.name}</h3>
+                        <p className="mt-3 text-xs text-ink-light/60 dark:text-ink-dark/60 font-medium">
                           {data.completed?.length || 0} lessons completed
                         </p>
                       </div>
@@ -627,30 +670,30 @@ export default function App() {
             </div>
           ) : (
             <section className="mx-auto max-w-2xl px-6 py-32 text-center sm:py-40">
-              <div className="mx-auto mb-8 flex size-16 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-900">
-                <svg className="size-8 text-zinc-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+              <div className="mx-auto mb-8 flex size-16 items-center justify-center rounded-2xl bg-black/5 dark:bg-white/5">
+                <svg className="size-8 text-ink-light/40 dark:text-ink-dark/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                 </svg>
               </div>
-              <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl dark:text-white">Minimal Course Player</h1>
-              <p className="mx-auto mt-4 max-w-lg text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+              <h1 className="text-3xl font-bold tracking-tight text-navy sm:text-4xl dark:text-white">Minimal Course Player</h1>
+              <p className="mx-auto mt-4 max-w-lg text-sm leading-6 text-ink-light/60 dark:text-ink-dark/60 font-medium">
                 Select a local folder of videos to start. Everything is saved locally in your browser.
               </p>
               <div className="mt-10 flex justify-center gap-4">
-                <button onClick={selectFolder} className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 shadow-sm">
+                <button onClick={selectFolder} className="rounded-full bg-terracotta px-8 py-3 font-bold tracking-wide text-white transition-all duration-300 hover:bg-terracotta-hover hover:scale-105 active:scale-95 shadow-[0_8px_24px_rgba(211,107,70,0.3)] dark:shadow-[0_8px_24px_rgba(211,107,70,0.15)]">
                   Choose Folder
                 </button>
               </div>
             </section>
           )}
           </div>
-          <footer className="border-t border-zinc-200/50 py-6 text-center text-sm text-zinc-500 dark:border-zinc-800/50 dark:text-zinc-400">
+          <footer className="border-t border-black/5 py-6 text-center text-sm text-ink-light/40 dark:border-white/5 dark:text-ink-dark/40">
             Created by{' '}
             <a 
               href="https://www.linkedin.com/in/mehedihossenfahim/" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="font-medium text-zinc-900 transition-colors hover:text-zinc-600 dark:text-white dark:hover:text-zinc-300"
+              className="font-bold text-navy transition-colors hover:text-terracotta dark:text-white dark:hover:text-terracotta"
             >
               Mehedi Hossen Fahim
             </a>
@@ -660,41 +703,49 @@ export default function App() {
           <section className="grid min-h-[calc(100vh-4rem)] grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0 px-4 py-8 sm:px-8 lg:px-12 lg:py-10">
               <div className="mx-auto max-w-6xl">
-                <div className="mb-4 flex items-center gap-2 text-xs font-medium text-zinc-400 dark:text-zinc-500">
+                <div className="mb-4 flex items-center gap-2 text-xs font-bold text-ink-light/60 dark:text-ink-dark/60">
                   <span>{activeCourseData?.name}</span>
                   <span>/</span>
-                  <span className="text-zinc-900 dark:text-zinc-300">{activeLesson?.section}</span>
+                  <span className="text-navy dark:text-white">{activeLesson?.section}</span>
                 </div>
                 
-                <div className="relative aspect-video overflow-hidden rounded-2xl bg-black ring-1 ring-zinc-200/50 shadow-2xl shadow-zinc-900/5 dark:ring-white/10">
-                  <video 
-                    ref={videoRef}
-                    src={currentVideoUrl || ''}
-                    onLoadedMetadata={handleVideoLoadedMetadata}
-                    onEnded={handleVideoEnded}
-                    onPause={() => savePlaybackPosition(true)}
-                    onTimeUpdate={handleVideoTimeUpdate}
-                    onDurationChange={refreshCaptionControl}
-                    onLoadedData={refreshCaptionControl}
-                    className="size-full" 
-                    controls preload="metadata" playsInline
-                  >
-                    {currentTrackUrl && (
-                      <track 
-                        kind="subtitles" 
-                        label="English" 
-                        srcLang="en" 
-                        src={currentTrackUrl} 
-                        default={store.preferences.captionsEnabled} 
-                      />
-                    )}
-                  </video>
+                <div className="relative aspect-video overflow-hidden rounded-2xl bg-black ring-1 ring-black/5 shadow-2xl shadow-black/10 dark:ring-white/10">
+                  {activeLesson?.isResource ? (
+                    <iframe 
+                      src={currentVideoUrl || ''} 
+                      className="size-full bg-white" 
+                      title={activeLesson.title}
+                    />
+                  ) : (
+                    <video 
+                      ref={videoRef}
+                      src={currentVideoUrl || ''}
+                      onLoadedMetadata={handleVideoLoadedMetadata}
+                      onEnded={handleVideoEnded}
+                      onPause={() => savePlaybackPosition(true)}
+                      onTimeUpdate={handleVideoTimeUpdate}
+                      onDurationChange={refreshCaptionControl}
+                      onLoadedData={refreshCaptionControl}
+                      className="size-full" 
+                      controls preload="metadata" playsInline
+                    >
+                      {currentTrackUrl && (
+                        <track 
+                          kind="subtitles" 
+                          label="English" 
+                          srcLang="en" 
+                          src={currentTrackUrl} 
+                          default={store.preferences.captionsEnabled} 
+                        />
+                      )}
+                    </video>
+                  )}
                   {!currentVideoUrl && (
-                    <div className="absolute inset-0 grid place-items-center bg-zinc-100 dark:bg-zinc-900">
-                      <p className="text-sm font-medium text-zinc-400">Select a lesson</p>
+                    <div className="absolute inset-0 grid place-items-center bg-paper-light dark:bg-paper-dark">
+                      <p className="text-sm font-bold text-ink-light/40 dark:text-ink-dark/40">Select a lesson</p>
                     </div>
                   )}
-                  {captionsAvailable && (
+                  {captionsAvailable && !activeLesson?.isResource && (
                     <button 
                       onClick={toggleCaptions}
                       className="absolute top-4 right-4 rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold tracking-wider text-white backdrop-blur-md transition hover:bg-black/80"
@@ -706,10 +757,10 @@ export default function App() {
 
                 <div className="mt-8 flex flex-col justify-between gap-6 sm:flex-row sm:items-start">
                   <div>
-                    <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-50">
+                    <h1 className="text-2xl font-bold tracking-tight text-navy sm:text-3xl dark:text-white">
                       {activeLesson?.title || 'Choose a lesson'}
                     </h1>
-                    <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    <p className="mt-2 text-sm text-ink-light/60 dark:text-ink-dark/60 font-medium">
                       Lesson {activeIndex + 1} of {totalLessons}
                       {pendingResume > 0 ? ` · Resume from ${formatPosition(pendingResume)}` : ''}
                     </p>
@@ -717,20 +768,20 @@ export default function App() {
                   <button 
                     onClick={toggleComplete}
                     disabled={!activeLesson}
-                    className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40
+                    className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full border px-5 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 shadow-sm
                       ${completedSet.has(activeLesson?.id) 
-                        ? 'border-transparent bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' 
-                        : 'border-zinc-200 bg-transparent text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}
+                        ? 'border-transparent bg-sage text-white dark:bg-sage' 
+                        : 'border-black/10 bg-white/50 text-navy hover:bg-white/80 dark:border-white/10 dark:bg-black/20 dark:text-white dark:hover:bg-black/40'}`}
                   >
                     {completedSet.has(activeLesson?.id) ? 'Completed ✓' : 'Mark as complete'}
                   </button>
                 </div>
 
-                <nav className="mt-8 flex items-center justify-between border-t border-zinc-100 pt-6 dark:border-zinc-800/50">
+                <nav className="mt-8 flex items-center justify-between border-t border-navy/10 pt-6 dark:border-white/10">
                   <button 
                     onClick={() => activateLesson(activeCourseId, activeCourseData, activeIndex - 1)}
                     disabled={activeIndex <= 0}
-                    className="flex items-center gap-2 text-sm font-medium text-zinc-500 transition hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:text-white"
+                    className="flex items-center gap-2 text-sm font-medium text-ink-light/60 transition hover:text-navy disabled:opacity-40 dark:text-ink-dark/60 dark:hover:text-white"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                     Previous
@@ -738,7 +789,7 @@ export default function App() {
                   <button 
                     onClick={() => activateLesson(activeCourseId, activeCourseData, activeIndex + 1)}
                     disabled={activeIndex >= totalLessons - 1}
-                    className="flex items-center gap-2 text-sm font-medium text-zinc-500 transition hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:text-white"
+                    className="flex items-center gap-2 text-sm font-medium text-ink-light/60 transition hover:text-navy disabled:opacity-40 dark:text-ink-dark/60 dark:hover:text-white"
                   >
                     Next
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -747,76 +798,110 @@ export default function App() {
               </div>
             </div>
 
-            <aside className="border-t border-zinc-200/50 bg-white/30 lg:border-t-0 lg:border-l dark:border-zinc-800/50 dark:bg-black/10">
+            <aside className="border-t border-navy/10 glass-panel lg:border-t-0 lg:border-l dark:border-white/10 dark:bg-black/20">
               <div className="sticky top-16 max-h-[calc(100vh-4rem)] overflow-y-auto p-6 soft-scrollbar">
                 
-                <div className="mb-6 rounded-2xl bg-zinc-100/50 p-4 dark:bg-zinc-900/50">
+                <div className="mb-6 rounded-2xl bg-white/40 p-4 dark:bg-white/5 border border-white/20 dark:border-white/10 shadow-sm backdrop-blur-sm">
                   <div className="flex items-end justify-between">
                     <div>
-                      <p className="text-[10px] font-bold tracking-widest text-zinc-400 dark:text-zinc-500">PROGRESS</p>
-                      <p className="mt-1 text-lg font-semibold tracking-tight">{progressPercent}%</p>
+                      <p className="text-[10px] font-bold tracking-widest text-ink-light/50 dark:text-ink-dark/50">PROGRESS</p>
+                      <p className="mt-1 text-lg font-semibold tracking-tight text-navy dark:text-white">{progressPercent}%</p>
                     </div>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{doneCount} / {totalLessons}</p>
+                    <p className="text-xs text-ink-light/60 dark:text-ink-dark/60">{doneCount} / {totalLessons}</p>
                   </div>
-                  <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                    <div className="h-full rounded-full bg-zinc-900 transition-all duration-500 dark:bg-zinc-100" style={{ width: `${progressPercent}%` }}></div>
+                  <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-navy/10 dark:bg-white/10">
+                    <div className="h-full rounded-full bg-terracotta transition-all duration-500 shadow-[0_0_8px_rgba(232,106,88,0.6)]" style={{ width: `${progressPercent}%` }}></div>
                   </div>
-                  <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="mt-4 text-xs text-ink-light/60 dark:text-ink-dark/60">
                     {measuredLessons.length === totalLessons 
                       ? `${formatDuration(remainingSeconds)} left of ${formatDuration(totalSeconds)}` 
                       : `Scanning videos... (${measuredLessons.length}/${totalLessons})`}
                   </p>
                 </div>
 
-                <div className="mb-6 flex gap-2">
-                  <div className="relative flex-1">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <div className="mb-6 flex flex-wrap gap-2">
+                  <div className="relative flex-1 min-w-[120px]">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light/40 dark:text-ink-dark/40" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                     <input 
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full rounded-full border-0 bg-zinc-100 py-2 pl-9 pr-4 text-xs text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-1 focus:ring-zinc-200 dark:bg-zinc-900 dark:text-white dark:focus:ring-zinc-800" 
+                      className="w-full rounded-full border border-navy/10 bg-white/50 py-2 pl-9 pr-4 text-xs text-navy outline-none placeholder:text-ink-light/40 focus:border-navy/30 focus:ring-1 focus:ring-navy/30 dark:border-white/10 dark:bg-black/20 dark:text-white dark:placeholder:text-ink-dark/40 dark:focus:border-white/30 dark:focus:ring-white/30 backdrop-blur-sm transition-all" 
                       type="search" 
                       placeholder="Search" 
                     />
                   </div>
-                  <button onClick={resetProgress} className="rounded-full px-3 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-white transition-colors" title="Reset Course">
+                  <button 
+                    onClick={toggleAllSections} 
+                    className="rounded-full px-3 text-xs font-medium text-ink-light/60 hover:bg-white/50 hover:text-navy dark:text-ink-dark/60 dark:hover:bg-white/10 dark:hover:text-white transition-colors" 
+                    title={sections.length > 0 && collapsedSections.size === sections.length ? "Expand All" : "Collapse All"}
+                  >
+                    {sections.length > 0 && collapsedSections.size === sections.length ? "Expand All" : "Collapse All"}
+                  </button>
+                  <button onClick={resetProgress} className="rounded-full px-3 text-xs font-medium text-ink-light/60 hover:bg-white/50 hover:text-navy dark:text-ink-dark/60 dark:hover:bg-white/10 dark:hover:text-white transition-colors" title="Reset Course">
                     Reset
                   </button>
                 </div>
 
                 <div className="space-y-6">
-                  {sections.map(s => {
+                  {sections.map((s, idx) => {
                     const filtered = s.lessons.filter(l => !searchQuery || l.title.toLowerCase().includes(searchQuery.toLowerCase()));
                     if (searchQuery && filtered.length === 0) return null;
+                    const isCollapsed = !searchQuery && collapsedSections.has(s.section);
+                    const colorClass = sectionColors[idx % sectionColors.length];
+                    
+                    const renderLesson = (l) => {
+                      const isActive = activeIndex === l.index;
+                      const isDone = completedSet.has(l.id);
+                      return (
+                        <button 
+                          key={l.id}
+                          onClick={() => activateLesson(activeCourseId, activeCourseData, l.index)}
+                          className={`group flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm transition-all
+                            ${isActive ? 'bg-navy/5 font-semibold text-navy dark:bg-white/10 dark:text-white shadow-sm backdrop-blur-sm border border-navy/10 dark:border-white/10' : 'text-ink-light hover:bg-white/40 dark:text-ink-dark dark:hover:bg-white/5 border border-transparent'}`}
+                        >
+                          <div className={`flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors
+                            ${isDone 
+                              ? 'border-sage bg-sage dark:border-sage dark:bg-sage shadow-[0_0_8px_rgba(115,147,126,0.6)]' 
+                              : isActive ? 'border-navy/40 dark:border-white/40' : 'border-navy/20 group-hover:border-navy/40 dark:border-white/20 dark:group-hover:border-white/40'}`}>
+                            {isDone && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}
+                          </div>
+                          <span className="min-w-0 flex-1 truncate">{l.title}</span>
+                          <span className={`shrink-0 text-[10px] ${isActive ? 'text-navy/60 dark:text-white/60 font-medium' : 'text-ink-light/40 opacity-0 transition-opacity group-hover:opacity-100 dark:text-ink-dark/40'}`}>
+                            {courseRecord.durations?.[l.id] ? formatDuration(courseRecord.durations[l.id]) : (l.isResource ? 'Resource' : '')}
+                          </span>
+                        </button>
+                      );
+                    };
+
+                    const videos = filtered.filter(l => !l.isResource);
+                    const resources = filtered.filter(l => l.isResource);
+
                     return (
-                      <div key={s.section}>
-                        <h3 className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                          {s.section}
-                        </h3>
-                        <div className="space-y-0.5">
-                          {filtered.map(l => {
-                            const isActive = activeIndex === l.index;
-                            const isDone = completedSet.has(l.id);
-                            return (
-                              <button 
-                                key={l.id}
-                                onClick={() => activateLesson(activeCourseId, activeCourseData, l.index)}
-                                className={`group flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm transition-colors
-                                  ${isActive ? 'bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-900 dark:text-white' : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-900/50'}`}
-                              >
-                                <div className={`flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors
-                                  ${isDone 
-                                    ? 'border-zinc-900 bg-zinc-900 dark:border-white dark:bg-white' 
-                                    : isActive ? 'border-zinc-400 dark:border-zinc-500' : 'border-zinc-300 group-hover:border-zinc-400 dark:border-zinc-700 dark:group-hover:border-zinc-600'}`}>
-                                  {isDone && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isDark ? '#09090b' : 'white'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>}
-                                </div>
-                                <span className="min-w-0 flex-1 truncate">{l.title}</span>
-                                <span className={`shrink-0 text-[10px] ${isActive ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 dark:text-zinc-500'}`}>
-                                  {courseRecord.durations?.[l.id] ? formatDuration(courseRecord.durations[l.id]) : ''}
-                                </span>
-                              </button>
-                            );
-                          })}
+                      <div key={s.section} className="flex flex-col">
+                        <button 
+                          onClick={() => toggleSection(s.section)}
+                          className="flex w-full items-center justify-between px-2 mb-2 cursor-pointer group outline-none"
+                        >
+                          <h3 className={`text-[11px] font-bold uppercase tracking-widest ${colorClass} transition-opacity opacity-80 group-hover:opacity-100 text-left`}>
+                            {s.section}
+                          </h3>
+                          <svg 
+                            className={`size-3.5 text-ink-light/40 dark:text-ink-dark/40 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                          </svg>
+                        </button>
+                        <div 
+                          className={`space-y-0.5 overflow-hidden transition-all duration-300 ease-in-out ${isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[5000px] opacity-100 mb-2'}`}
+                        >
+                          {videos.map(renderLesson)}
+                          {resources.length > 0 && (
+                            <div className={`space-y-0.5 ${videos.length > 0 ? 'mt-3 pt-3 border-t border-navy/5 dark:border-white/5' : ''}`}>
+                              {videos.length > 0 && <p className="px-2 mb-2 text-[10px] font-bold uppercase tracking-widest text-ink-light/40 dark:text-ink-dark/40">Resources</p>}
+                              {resources.map(renderLesson)}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
