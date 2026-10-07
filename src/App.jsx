@@ -124,9 +124,49 @@ export default function App() {
   const fileInputRef = useRef(null);
   const lastTimeUpdate = useRef(0);
 
+  const [audioBoost, setAudioBoost] = useState(1);
+  const audioContextRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const sourceNodeRef = useRef(null);
+  const audioInitializedRef = useRef(false);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   }, [store]);
+
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = audioBoost;
+    }
+  }, [audioBoost]);
+
+  const initAudio = () => {
+    if (audioInitializedRef.current || !videoRef.current) return;
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const source = ctx.createMediaElementSource(videoRef.current);
+      const gainNode = ctx.createGain();
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      audioContextRef.current = ctx;
+      gainNodeRef.current = gainNode;
+      sourceNodeRef.current = source;
+      gainNode.gain.value = audioBoost;
+      audioInitializedRef.current = true;
+    } catch (err) {
+      console.warn('Could not initialize audio context', err);
+    }
+  };
+
+  const handlePlay = () => {
+    initAudio();
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+  };
 
   useEffect(() => {
     const dark = store.preferences.theme === 'dark';
@@ -726,6 +766,7 @@ export default function App() {
                       onTimeUpdate={handleVideoTimeUpdate}
                       onDurationChange={refreshCaptionControl}
                       onLoadedData={refreshCaptionControl}
+                      onPlay={handlePlay}
                       className="size-full" 
                       controls preload="metadata" playsInline
                     >
@@ -751,6 +792,14 @@ export default function App() {
                       className="absolute top-4 right-4 rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold tracking-wider text-white backdrop-blur-md transition hover:bg-black/80"
                     >
                       CC {store.preferences.captionsEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  )}
+                  {!activeLesson?.isResource && (
+                    <button 
+                      onClick={() => setAudioBoost(prev => prev === 1 ? 1.5 : prev === 1.5 ? 2 : prev === 2 ? 3 : 1)}
+                      className={`absolute top-4 ${captionsAvailable ? 'right-20' : 'right-4'} rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold tracking-wider text-white backdrop-blur-md transition hover:bg-black/80`}
+                    >
+                      VOL {audioBoost}x
                     </button>
                   )}
                 </div>
@@ -875,16 +924,24 @@ export default function App() {
 
                     const videos = filtered.filter(l => !l.isResource);
                     const resources = filtered.filter(l => l.isResource);
+                    const isSectionCompleted = videos.length > 0 && videos.every(v => completedSet.has(v.id));
 
                     return (
-                      <div key={s.section} className="flex flex-col">
+                      <div key={s.section} className={`flex flex-col transition-opacity duration-300 ${isSectionCompleted ? 'opacity-70' : 'opacity-100'}`}>
                         <button 
                           onClick={() => toggleSection(s.section)}
                           className="flex w-full items-center justify-between px-2 mb-2 cursor-pointer group outline-none"
                         >
-                          <h3 className={`text-[11px] font-bold uppercase tracking-widest ${colorClass} transition-opacity opacity-80 group-hover:opacity-100 text-left`}>
-                            {s.section}
-                          </h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className={`text-[11px] font-bold uppercase tracking-widest ${isSectionCompleted ? 'text-ink-light/60 dark:text-ink-dark/60' : colorClass} transition-opacity opacity-80 group-hover:opacity-100 text-left`}>
+                              {s.section}
+                            </h3>
+                            {isSectionCompleted && (
+                              <div className="flex size-3.5 items-center justify-center rounded-full bg-sage shadow-[0_0_8px_rgba(115,147,126,0.4)]">
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                              </div>
+                            )}
+                          </div>
                           <svg 
                             className={`size-3.5 text-ink-light/40 dark:text-ink-dark/40 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
                             fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
